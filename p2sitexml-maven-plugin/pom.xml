@@ -115,11 +115,10 @@
 					<aggregate>true</aggregate>
 					<header>src/main/resources/license.txt</header>
 					<excludes>
-						<exclude>**/.darwino</exclude>
-						<exclude>**/pom.xml</exclude>
-						<exclude>**/.*project</exclude>
-						<exclude>**/*.properties</exclude>
-						<exclude>**/*.html</exclude>
+						<exclude>pom.xml</exclude>
+			            <exclude>**/README</exclude>
+			            <exclude>src/test/resources/**</exclude>
+			            <exclude>src/main/resources/**</exclude>
 					</excludes>
 					<properties>
 						<owner>Darwino, Inc.</owner>
