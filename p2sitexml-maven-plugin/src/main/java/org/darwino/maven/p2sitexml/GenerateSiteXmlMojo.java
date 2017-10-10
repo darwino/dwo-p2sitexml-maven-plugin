@@ -91,7 +91,7 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 					}
 				}
 				
-				String xml = DOMUtil.getXMLString(doc);
+				String xml = DOMUtil.getXMLString(doc, false, true);
 				File output = new File(f, "site.xml"); //$NON-NLS-1$
 				FileWriter w = null;
 				try {
