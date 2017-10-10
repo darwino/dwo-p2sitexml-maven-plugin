@@ -1,0 +1,14 @@
+<lifecycleMappingMetadata>
+	<pluginExecutions>
+		<pluginExecution>
+			<pluginExecutionFilter>
+				<goals>
+					<goal>generate-site-xml</goal>
+				</goals>
+			</pluginExecutionFilter>
+			<action>
+				<ignore />
+			</action>
+		</pluginExecution>
+	</pluginExecutions>
+</lifecycleMappingMetadata>
