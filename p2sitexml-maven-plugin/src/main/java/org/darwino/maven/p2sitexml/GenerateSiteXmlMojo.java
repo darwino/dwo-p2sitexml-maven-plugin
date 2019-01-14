@@ -23,6 +23,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 
 import com.ibm.commons.util.StringUtil;
 import com.ibm.commons.util.io.StreamUtil;
@@ -30,11 +31,16 @@ import com.ibm.commons.xml.DOMUtil;
 import com.ibm.commons.xml.XMLException;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.FilenameFilter;
+import java.io.InputStream;
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipInputStream;
 
 /**
  * Goal which generates a site.xml file from a features directory.
@@ -54,10 +60,10 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 	@Parameter(defaultValue="", property="category", required=false)
 	private String category;
 
-	@SuppressWarnings("resource")
 	@Override
 	public void execute() throws MojoExecutionException {
 		File f = p2Directory;
+		System.out.println("Looking at " + f);
 
 		if (!f.exists() || !f.isDirectory()) {
 			throw new MojoExecutionException("Repository directory does not exist.");
@@ -73,11 +79,35 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				
 				// Create the category entry if applicable
 				String category = this.category;
+				Set<String> createdCategories = new HashSet<>();
 				if(StringUtil.isNotEmpty(category)) {
 					Element categoryDef = DOMUtil.createElement(doc, root, "category-def"); //$NON-NLS-1$
 					categoryDef.setAttribute("name", category); //$NON-NLS-1$
 					categoryDef.setAttribute("label", category); //$NON-NLS-1$
 				}
+
+				Document content = null;
+				File contentFile = new File(f, "content.xml");
+				if(contentFile.exists()) {
+					try(InputStream is = new FileInputStream(contentFile)) {
+						content = DOMUtil.createDocument(is);
+					}
+				} else {
+					// Check for content.jar
+					contentFile = new File(f, "content.jar");
+					if(contentFile.exists()) {
+						try(InputStream is = new FileInputStream(contentFile)) {
+							try(ZipInputStream zis = new ZipInputStream(is)) {
+								zis.getNextEntry();
+								content = DOMUtil.createDocument(zis);
+							}
+						}
+					}
+				}
+				if(content == null) {
+					content = DOMUtil.createDocument();
+				}
+
 				
 				String[] featureFiles = features.list(new FilenameFilter() {
 					@Override public boolean accept(File parent, String fileName) {
@@ -103,6 +133,32 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 					if(StringUtil.isNotEmpty(category)) {
 						Element categoryElement = DOMUtil.createElement(doc, featureElement, "category"); //$NON-NLS-1$
 						categoryElement.setAttribute("name", category); //$NON-NLS-1$
+					} else {
+						// See if it's referenced in any content.xml features
+						Object[] matches = DOMUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group"));
+						if(matches.length > 0) {
+							for(Object match : matches) {
+								if(match instanceof Element) {
+									Element matchEl = (Element)match;
+									Node unit = matchEl.getParentNode().getParentNode();
+									// Make sure the parent is a category
+									boolean isCategory = DOMUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']") != null;
+									if(isCategory) {
+										String categoryName = DOMUtil.value(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value");
+										Element categoryElement = DOMUtil.createElement(doc, featureElement, "category"); //$NON-NLS-1$
+										categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
+
+										if(!createdCategories.contains(categoryName)) {
+											Element categoryDef = DOMUtil.createElement(doc, root, "category-def"); //$NON-NLS-1$
+											categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
+											categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
+											createdCategories.add(categoryName);
+										}
+										break;
+									}
+								}
+							}
+						}
 					}
 				}
 				
@@ -119,7 +175,7 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 				
 				getLog().info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
-			} catch(XMLException e) {
+			} catch(XMLException | IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
 			}
 		}
