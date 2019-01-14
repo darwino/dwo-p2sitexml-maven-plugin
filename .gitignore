@@ -6,6 +6,8 @@ bin/
 .factorypath
 /apt_generated/
 
+.vscode/
+
 # IntelliJ
 .idea
 *.iml
