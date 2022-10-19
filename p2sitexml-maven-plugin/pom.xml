@@ -22,9 +22,9 @@
 			<version>9.0.0</version>
 		</dependency>
 		<dependency>
-			<groupId>com.ibm.sbt</groupId>
-			<artifactId>com.ibm.commons.xml</artifactId>
-			<version>9.0.0</version>
+			<groupId>org.openntf.nsfodp</groupId>
+			<artifactId>org.openntf.nsfodp.commons</artifactId>
+			<version>3.9.0</version>
 		</dependency>
 	
 		<dependency>
@@ -54,6 +54,13 @@
 		</license>
 	</licenses>
 
+	<repositories>
+		<repository>
+			<id>artifactory.openntf.org</id>
+			<name>artifactory.openntf.org</name>
+			<url>https://artifactory.openntf.org/openntf</url>
+		</repository>
+	</repositories>
 	<distributionManagement>
 		<repository>
 			<id>artifactory.openntf.org</id>

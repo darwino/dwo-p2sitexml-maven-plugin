@@ -21,14 +21,13 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.openntf.nsfodp.commons.xml.NSFODPDomUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import com.ibm.commons.util.StringUtil;
 import com.ibm.commons.util.io.StreamUtil;
-import com.ibm.commons.xml.DOMUtil;
-import com.ibm.commons.xml.XMLException;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -37,6 +36,7 @@ import java.io.FilenameFilter;
 import java.io.InputStream;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -74,38 +74,38 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 			}
 			
 			try {
-				Document doc = DOMUtil.createDocument();
-				Element root = DOMUtil.createElement(doc, "site"); //$NON-NLS-1$
+				Document doc = NSFODPDomUtil.createDocument();
+				Element root = NSFODPDomUtil.createElement(doc, "site"); //$NON-NLS-1$
 				
 				// Create the category entry if applicable
 				String category = this.category;
 				Set<String> createdCategories = new HashSet<>();
 				if(StringUtil.isNotEmpty(category)) {
-					Element categoryDef = DOMUtil.createElement(doc, root, "category-def"); //$NON-NLS-1$
+					Element categoryDef = NSFODPDomUtil.createElement(root, "category-def"); //$NON-NLS-1$
 					categoryDef.setAttribute("name", category); //$NON-NLS-1$
 					categoryDef.setAttribute("label", category); //$NON-NLS-1$
 				}
 
 				Document content = null;
-				File contentFile = new File(f, "content.xml");
+				File contentFile = new File(f, "content.xml"); //$NON-NLS-1$
 				if(contentFile.exists()) {
 					try(InputStream is = new FileInputStream(contentFile)) {
-						content = DOMUtil.createDocument(is);
+						content = NSFODPDomUtil.createDocument(is);
 					}
 				} else {
 					// Check for content.jar
-					contentFile = new File(f, "content.jar");
+					contentFile = new File(f, "content.jar"); //$NON-NLS-1$
 					if(contentFile.exists()) {
 						try(InputStream is = new FileInputStream(contentFile)) {
 							try(ZipInputStream zis = new ZipInputStream(is)) {
 								zis.getNextEntry();
-								content = DOMUtil.createDocument(zis);
+								content = NSFODPDomUtil.createDocument(zis);
 							}
 						}
 					}
 				}
 				if(content == null) {
-					content = DOMUtil.createDocument();
+					content = NSFODPDomUtil.createDocument();
 				}
 
 				
@@ -124,32 +124,32 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 					String featureName = matcher.group(1);
 					String version = matcher.group(2);
 					
-					Element featureElement = DOMUtil.createElement(doc, root, "feature"); //$NON-NLS-1$
+					Element featureElement = NSFODPDomUtil.createElement(root, "feature"); //$NON-NLS-1$
 					String url = "features/" + featureFilename; //$NON-NLS-1$
 					featureElement.setAttribute("url", url); //$NON-NLS-1$
 					featureElement.setAttribute("id", featureName); //$NON-NLS-1$
 					featureElement.setAttribute("version", version); //$NON-NLS-1$
 					
 					if(StringUtil.isNotEmpty(category)) {
-						Element categoryElement = DOMUtil.createElement(doc, featureElement, "category"); //$NON-NLS-1$
+						Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
 						categoryElement.setAttribute("name", category); //$NON-NLS-1$
 					} else {
 						// See if it's referenced in any content.xml features
-						Object[] matches = DOMUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group"));
-						if(matches.length > 0) {
+						List<Node> matches = NSFODPDomUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group")); //$NON-NLS-1$
+						if(!matches.isEmpty()) {
 							for(Object match : matches) {
 								if(match instanceof Element) {
 									Element matchEl = (Element)match;
 									Node unit = matchEl.getParentNode().getParentNode();
 									// Make sure the parent is a category
-									boolean isCategory = DOMUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']") != null;
+									boolean isCategory = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']") != null; //$NON-NLS-1$
 									if(isCategory) {
-										String categoryName = DOMUtil.value(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value");
-										Element categoryElement = DOMUtil.createElement(doc, featureElement, "category"); //$NON-NLS-1$
+										String categoryName = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value").get().getNodeValue(); //$NON-NLS-1$
+										Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
 										categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
 
 										if(!createdCategories.contains(categoryName)) {
-											Element categoryDef = DOMUtil.createElement(doc, root, "category-def"); //$NON-NLS-1$
+											Element categoryDef = NSFODPDomUtil.createElement(root, "category-def"); //$NON-NLS-1$
 											categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
 											categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
 											createdCategories.add(categoryName);
@@ -162,7 +162,7 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 					}
 				}
 				
-				String xml = DOMUtil.getXMLString(doc, false, true);
+				String xml = NSFODPDomUtil.getXmlString(doc, null);
 				File output = new File(f, "site.xml"); //$NON-NLS-1$
 				FileWriter w = null;
 				try {
@@ -175,7 +175,7 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 				
 				getLog().info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
-			} catch(XMLException | IOException e) {
+			} catch(IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
 			}
 		}
