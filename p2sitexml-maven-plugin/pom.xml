@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.darwino</groupId>
 	<artifactId>p2sitexml-maven-plugin</artifactId>
-	<version>1.1.0</version>
+	<version>1.2.0</version>
 	<packaging>maven-plugin</packaging>
 
 	<name>Darwino p2-to-site.xml Maven Plugin</name>
@@ -22,15 +22,16 @@
 			<version>9.0.0</version>
 		</dependency>
 		<dependency>
-			<groupId>com.ibm.sbt</groupId>
-			<artifactId>com.ibm.commons.xml</artifactId>
-			<version>9.0.0</version>
+			<groupId>org.openntf.nsfodp</groupId>
+			<artifactId>org.openntf.nsfodp.commons</artifactId>
+			<version>3.9.0</version>
 		</dependency>
 	
 		<dependency>
 			<groupId>org.apache.maven</groupId>
 			<artifactId>maven-plugin-api</artifactId>
 			<version>2.0</version>
+			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.maven.plugin-tools</groupId>
@@ -54,6 +55,13 @@
 		</license>
 	</licenses>
 
+	<repositories>
+		<repository>
+			<id>artifactory.openntf.org</id>
+			<name>artifactory.openntf.org</name>
+			<url>https://artifactory.openntf.org/openntf</url>
+		</repository>
+	</repositories>
 	<distributionManagement>
 		<repository>
 			<id>artifactory.openntf.org</id>
@@ -86,7 +94,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-plugin-plugin</artifactId>
-				<version>3.2</version>
+				<version>3.6.4</version>
 				<configuration>
 					<goalPrefix>p2sitexml</goalPrefix>
 					<skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
