@@ -15,6 +15,21 @@
  */
 package org.darwino.maven.p2sitexml;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.text.MessageFormat;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipInputStream;
+
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
@@ -27,20 +42,6 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import com.ibm.commons.util.StringUtil;
-import com.ibm.commons.util.io.StreamUtil;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileWriter;
-import java.io.InputStream;
-import java.text.MessageFormat;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.ZipInputStream;
 
 /**
  * Goal which generates a site.xml file from a features directory.
@@ -62,18 +63,18 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
-		File f = p2Directory;
+		Path f = p2Directory.toPath();
 		Log log = getLog();
 		if(log.isInfoEnabled()) {
 			log.info(MessageFormat.format("Looking at {0}", f));
 		}
 
-		if (!f.exists() || !f.isDirectory()) {
+		if (!Files.isDirectory(f)) {
 			throw new MojoExecutionException("Repository directory does not exist.");
 		} else {
-			File features = new File(f, "features"); //$NON-NLS-1$
-			if(!features.exists() || !features.isDirectory()) {
-				throw new MojoExecutionException("Unable to find features directory: " + features.getAbsolutePath());
+			Path features = f.resolve("features"); //$NON-NLS-1$
+			if(!Files.isDirectory(features)) {
+				throw new MojoExecutionException("Unable to find features directory: " + features);
 			}
 			
 			try {
@@ -90,16 +91,16 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 
 				Document content = null;
-				File contentFile = new File(f, "content.xml"); //$NON-NLS-1$
-				if(contentFile.exists()) {
-					try(InputStream is = new FileInputStream(contentFile)) {
+				Path contentFile = f.resolve("content.xml"); //$NON-NLS-1$
+				if(Files.isRegularFile(contentFile)) {
+					try(InputStream is = Files.newInputStream(contentFile)) {
 						content = NSFODPDomUtil.createDocument(is);
 					}
 				} else {
 					// Check for content.jar
-					contentFile = new File(f, "content.jar"); //$NON-NLS-1$
-					if(contentFile.exists()) {
-						try(InputStream is = new FileInputStream(contentFile)) {
+					contentFile = f.resolve("content.jar"); //$NON-NLS-1$
+					if(Files.isRegularFile(contentFile)) {
+						try(InputStream is = Files.newInputStream(contentFile)) {
 							try(ZipInputStream zis = new ZipInputStream(is)) {
 								zis.getNextEntry();
 								content = NSFODPDomUtil.createDocument(zis);
@@ -112,7 +113,11 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 
 				
-				String[] featureFiles = features.list((parent, fileName) -> StringUtil.toString(fileName).toLowerCase().endsWith(".jar")); //$NON-NLS-1$
+				String[] featureFiles = Files.list(features)
+					.filter(path -> path.getFileName().toString().endsWith(".jar")) //$NON-NLS-1$
+					.map(Path::getFileName)
+					.map(Path::toString)
+					.toArray(String[]::new);
 				
 				for(String featureFilename : featureFiles) {
 					Matcher matcher = FEATURE_FILENAME_PATTERN.matcher(featureFilename);
@@ -164,19 +169,15 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 				
 				String xml = NSFODPDomUtil.getXmlString(doc, null);
-				File output = new File(f, "site.xml"); //$NON-NLS-1$
-				FileWriter w = null;
-				try {
-					w = new FileWriter(output);
+				Path output = f.resolve("site.xml"); //$NON-NLS-1$
+				try(BufferedWriter w = Files.newBufferedWriter(output, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
 					w.write(xml);
 				} catch (IOException e) {
 					throw new MojoExecutionException("Error writing site.xml file", e);
-				} finally {
-					StreamUtil.close(w);
 				}
 				
 				if(log.isInfoEnabled()) {
-					log.info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
+					log.info(StringUtil.format("Wrote site.xml contents to {0}", output));
 				}
 			} catch(IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
