@@ -17,7 +17,7 @@ package org.darwino.maven.p2sitexml;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-
+import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -32,8 +32,8 @@ import com.ibm.commons.util.io.StreamUtil;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
-import java.io.FilenameFilter;
 import java.io.InputStream;
+import java.text.MessageFormat;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
@@ -63,7 +63,10 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 	@Override
 	public void execute() throws MojoExecutionException {
 		File f = p2Directory;
-		System.out.println("Looking at " + f);
+		Log log = getLog();
+		if(log.isInfoEnabled()) {
+			log.info(MessageFormat.format("Looking at {0}", f));
+		}
 
 		if (!f.exists() || !f.isDirectory()) {
 			throw new MojoExecutionException("Repository directory does not exist.");
@@ -109,18 +112,16 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 
 				
-				String[] featureFiles = features.list(new FilenameFilter() {
-					@Override public boolean accept(File parent, String fileName) {
-						return StringUtil.toString(fileName).toLowerCase().endsWith(".jar"); //$NON-NLS-1$
-					}
-				});
+				String[] featureFiles = features.list((parent, fileName) -> StringUtil.toString(fileName).toLowerCase().endsWith(".jar")); //$NON-NLS-1$
 				
 				for(String featureFilename : featureFiles) {
 					Matcher matcher = FEATURE_FILENAME_PATTERN.matcher(featureFilename);
 					if(!matcher.matches()) {
 						throw new IllegalStateException("Could not match filename pattern to " + featureFilename);
 					}
-					getLog().debug("Filename matcher groups: " + matcher.groupCount());
+					if(log.isDebugEnabled()) {
+						log.debug(MessageFormat.format("Filename matcher groups: {0}", matcher.groupCount()));
+					}
 					String featureName = matcher.group(1);
 					String version = matcher.group(2);
 					
@@ -174,7 +175,9 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 					StreamUtil.close(w);
 				}
 				
-				getLog().info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
+				if(log.isInfoEnabled()) {
+					log.info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
+				}
 			} catch(IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
 			}
