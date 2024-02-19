@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.text.MessageFormat;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -139,31 +140,7 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 									Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
 									categoryElement.setAttribute("name", category); //$NON-NLS-1$
 								} else {
-									// See if it's referenced in any content.xml features
-									List<Node> matches = NSFODPDomUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group")); //$NON-NLS-1$
-									if(!matches.isEmpty()) {
-										for(Object match : matches) {
-											if(match instanceof Element) {
-												Element matchEl = (Element)match;
-												Node unit = matchEl.getParentNode().getParentNode();
-												// Make sure the parent is a category
-												boolean isCategory = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']") != null; //$NON-NLS-1$
-												if(isCategory) {
-													String categoryName = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value").get().getNodeValue(); //$NON-NLS-1$
-													Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
-													categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
-
-													if(!createdCategories.contains(categoryName)) {
-														Element categoryDef = NSFODPDomUtil.createElement(root, "category-def"); //$NON-NLS-1$
-														categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
-														categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
-														createdCategories.add(categoryName);
-													}
-													break;
-												}
-											}
-										}
-									}
+									findCategory(content, root, featureElement, featureName, createdCategories);
 								}
 								
 								break;
@@ -187,6 +164,35 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 			} catch(IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
+			}
+		}
+	}
+	
+	private void findCategory(Document content, Element siteXml, Element featureElement, String featureName, Collection<String> createdCategories) {
+		// See if it's referenced in any content.xml features
+		List<Node> matches = NSFODPDomUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group")); //$NON-NLS-1$
+		if(!matches.isEmpty()) {
+			for(Object match : matches) {
+				if(match instanceof Element) {
+					Element matchEl = (Element)match;
+					Node unit = matchEl.getParentNode().getParentNode();
+					// Make sure the parent is a category
+					Element categoryNode = (Element)NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']").orElse(null); //$NON-NLS-1$
+					boolean isCategory = categoryNode != null && "true".equals(categoryNode.getAttribute("value")); //$NON-NLS-1$ //$NON-NLS-2$
+					if(isCategory) {
+						String categoryName = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value").get().getNodeValue(); //$NON-NLS-1$
+						Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
+						categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
+
+						if(!createdCategories.contains(categoryName)) {
+							Element categoryDef = NSFODPDomUtil.createElement(siteXml, "category-def"); //$NON-NLS-1$
+							categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
+							categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
+							createdCategories.add(categoryName);
+						}
+						break;
+					}
+				}
 			}
 		}
 	}
