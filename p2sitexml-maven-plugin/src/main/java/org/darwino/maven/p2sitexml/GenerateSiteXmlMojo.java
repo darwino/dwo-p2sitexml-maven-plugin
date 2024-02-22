@@ -15,9 +15,25 @@
  */
 package org.darwino.maven.p2sitexml;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.text.MessageFormat;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-
+import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -27,28 +43,12 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
 import com.ibm.commons.util.StringUtil;
-import com.ibm.commons.util.io.StreamUtil;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileWriter;
-import java.io.FilenameFilter;
-import java.io.InputStream;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.zip.ZipInputStream;
 
 /**
  * Goal which generates a site.xml file from a features directory.
  */
 @Mojo(name="generate-site-xml", defaultPhase=LifecyclePhase.PREPARE_PACKAGE)
 public class GenerateSiteXmlMojo extends AbstractMojo {
-	private static final Pattern FEATURE_FILENAME_PATTERN = Pattern.compile("^([^_]+)_(.*)\\.jar$"); //$NON-NLS-1$
-	
 	/**
 	 * Location of the p2 repository.
 	 */
@@ -62,15 +62,18 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 
 	@Override
 	public void execute() throws MojoExecutionException {
-		File f = p2Directory;
-		System.out.println("Looking at " + f);
+		Path f = p2Directory.toPath();
+		Log log = getLog();
+		if(log.isInfoEnabled()) {
+			log.info(MessageFormat.format("Looking at {0}", f));
+		}
 
-		if (!f.exists() || !f.isDirectory()) {
+		if (!Files.isDirectory(f)) {
 			throw new MojoExecutionException("Repository directory does not exist.");
 		} else {
-			File features = new File(f, "features"); //$NON-NLS-1$
-			if(!features.exists() || !features.isDirectory()) {
-				throw new MojoExecutionException("Unable to find features directory: " + features.getAbsolutePath());
+			Path features = f.resolve("features"); //$NON-NLS-1$
+			if(!Files.isDirectory(features)) {
+				throw new MojoExecutionException("Unable to find features directory: " + features);
 			}
 			
 			try {
@@ -87,16 +90,16 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 
 				Document content = null;
-				File contentFile = new File(f, "content.xml"); //$NON-NLS-1$
-				if(contentFile.exists()) {
-					try(InputStream is = new FileInputStream(contentFile)) {
+				Path contentFile = f.resolve("content.xml"); //$NON-NLS-1$
+				if(Files.isRegularFile(contentFile)) {
+					try(InputStream is = Files.newInputStream(contentFile)) {
 						content = NSFODPDomUtil.createDocument(is);
 					}
 				} else {
 					// Check for content.jar
-					contentFile = new File(f, "content.jar"); //$NON-NLS-1$
-					if(contentFile.exists()) {
-						try(InputStream is = new FileInputStream(contentFile)) {
+					contentFile = f.resolve("content.jar"); //$NON-NLS-1$
+					if(Files.isRegularFile(contentFile)) {
+						try(InputStream is = Files.newInputStream(contentFile)) {
 							try(ZipInputStream zis = new ZipInputStream(is)) {
 								zis.getNextEntry();
 								content = NSFODPDomUtil.createDocument(zis);
@@ -109,74 +112,87 @@ public class GenerateSiteXmlMojo extends AbstractMojo {
 				}
 
 				
-				String[] featureFiles = features.list(new FilenameFilter() {
-					@Override public boolean accept(File parent, String fileName) {
-						return StringUtil.toString(fileName).toLowerCase().endsWith(".jar"); //$NON-NLS-1$
-					}
-				});
+				Path[] featureFiles = Files.list(features)
+					.filter(path -> path.getFileName().toString().endsWith(".jar")) //$NON-NLS-1$
+					.toArray(Path[]::new);
 				
-				for(String featureFilename : featureFiles) {
-					Matcher matcher = FEATURE_FILENAME_PATTERN.matcher(featureFilename);
-					if(!matcher.matches()) {
-						throw new IllegalStateException("Could not match filename pattern to " + featureFilename);
-					}
-					getLog().debug("Filename matcher groups: " + matcher.groupCount());
-					String featureName = matcher.group(1);
-					String version = matcher.group(2);
-					
-					Element featureElement = NSFODPDomUtil.createElement(root, "feature"); //$NON-NLS-1$
-					String url = "features/" + featureFilename; //$NON-NLS-1$
-					featureElement.setAttribute("url", url); //$NON-NLS-1$
-					featureElement.setAttribute("id", featureName); //$NON-NLS-1$
-					featureElement.setAttribute("version", version); //$NON-NLS-1$
-					
-					if(StringUtil.isNotEmpty(category)) {
-						Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
-						categoryElement.setAttribute("name", category); //$NON-NLS-1$
-					} else {
-						// See if it's referenced in any content.xml features
-						List<Node> matches = NSFODPDomUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group")); //$NON-NLS-1$
-						if(!matches.isEmpty()) {
-							for(Object match : matches) {
-								if(match instanceof Element) {
-									Element matchEl = (Element)match;
-									Node unit = matchEl.getParentNode().getParentNode();
-									// Make sure the parent is a category
-									boolean isCategory = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']") != null; //$NON-NLS-1$
-									if(isCategory) {
-										String categoryName = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value").get().getNodeValue(); //$NON-NLS-1$
-										Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
-										categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
+				for(Path featureFile : featureFiles) {
+					try(
+						InputStream is = Files.newInputStream(featureFile);
+						ZipInputStream zis = new ZipInputStream(is, StandardCharsets.UTF_8)
+					) {
+						ZipEntry siteEntry = zis.getNextEntry();
+						while(siteEntry != null) {
+							if("feature.xml".equals(siteEntry.getName())) { //$NON-NLS-1$
+								Document featureXml = NSFODPDomUtil.createDocument(zis);
+								Element featureRootElement = featureXml.getDocumentElement();
 
-										if(!createdCategories.contains(categoryName)) {
-											Element categoryDef = NSFODPDomUtil.createElement(root, "category-def"); //$NON-NLS-1$
-											categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
-											categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
-											createdCategories.add(categoryName);
-										}
-										break;
-									}
+								String featureName = featureRootElement.getAttribute("id"); //$NON-NLS-1$
+								String version = featureRootElement.getAttribute("version"); //$NON-NLS-1$
+								
+								Element featureElement = NSFODPDomUtil.createElement(root, "feature"); //$NON-NLS-1$
+								String url = f.relativize(featureFile).toString();
+								featureElement.setAttribute("url", url); //$NON-NLS-1$
+								featureElement.setAttribute("id", featureName); //$NON-NLS-1$
+								featureElement.setAttribute("version", version); //$NON-NLS-1$
+								
+								if(StringUtil.isNotEmpty(category)) {
+									Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
+									categoryElement.setAttribute("name", category); //$NON-NLS-1$
+								} else {
+									findCategory(content, root, featureElement, featureName, createdCategories);
 								}
+								
+								break;
 							}
+							
+							siteEntry = zis.getNextEntry();
 						}
 					}
 				}
 				
 				String xml = NSFODPDomUtil.getXmlString(doc, null);
-				File output = new File(f, "site.xml"); //$NON-NLS-1$
-				FileWriter w = null;
-				try {
-					w = new FileWriter(output);
+				Path output = f.resolve("site.xml"); //$NON-NLS-1$
+				try(BufferedWriter w = Files.newBufferedWriter(output, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
 					w.write(xml);
 				} catch (IOException e) {
 					throw new MojoExecutionException("Error writing site.xml file", e);
-				} finally {
-					StreamUtil.close(w);
 				}
 				
-				getLog().info(StringUtil.format("Wrote site.xml contents to {0}", output.getAbsolutePath()));
+				if(log.isInfoEnabled()) {
+					log.info(StringUtil.format("Wrote site.xml contents to {0}", output));
+				}
 			} catch(IOException e) {
 				throw new MojoExecutionException("Exception while building site.xml document", e);
+			}
+		}
+	}
+	
+	private void findCategory(Document content, Element siteXml, Element featureElement, String featureName, Collection<String> createdCategories) {
+		// See if it's referenced in any content.xml features
+		List<Node> matches = NSFODPDomUtil.nodes(content, StringUtil.format("/repository/units/unit/requires/required[@name='{0}']", featureName + ".feature.group")); //$NON-NLS-1$
+		if(!matches.isEmpty()) {
+			for(Object match : matches) {
+				if(match instanceof Element) {
+					Element matchEl = (Element)match;
+					Node unit = matchEl.getParentNode().getParentNode();
+					// Make sure the parent is a category
+					Element categoryNode = (Element)NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.type.category']").orElse(null); //$NON-NLS-1$
+					boolean isCategory = categoryNode != null && "true".equals(categoryNode.getAttribute("value")); //$NON-NLS-1$ //$NON-NLS-2$
+					if(isCategory) {
+						String categoryName = NSFODPDomUtil.node(unit, "properties/property[@name='org.eclipse.equinox.p2.name']/@value").get().getNodeValue(); //$NON-NLS-1$
+						Element categoryElement = NSFODPDomUtil.createElement(featureElement, "category"); //$NON-NLS-1$
+						categoryElement.setAttribute("name", categoryName); //$NON-NLS-1$
+
+						if(!createdCategories.contains(categoryName)) {
+							Element categoryDef = NSFODPDomUtil.createElement(siteXml, "category-def"); //$NON-NLS-1$
+							categoryDef.setAttribute("name", categoryName); //$NON-NLS-1$
+							categoryDef.setAttribute("label", categoryName); //$NON-NLS-1$
+							createdCategories.add(categoryName);
+						}
+						break;
+					}
+				}
 			}
 		}
 	}
